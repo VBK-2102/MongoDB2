@@ -5,11 +5,11 @@ const { MongoClient, ObjectId } = require('mongodb');
 const axios = require('axios');
 require('dotenv').config();
 
-// Admin credentials
+// Admin credentials - Update UID with actual Firebase UID
 const ADMIN_CREDENTIALS = {
   email: "vaibhav.admin@gmail.com",
   password: "Vaibhav1234",
-  uid: "zgtQXvwBhMbHR4FcdduoNF7sbhl1"
+  uid: "83HM4RcwD4Ye08PY13dY484EIxm2" // Replace with actual UID from Firebase Console
 };
 
 const app = express();
@@ -478,6 +478,83 @@ app.get('/api/health', (req, res) => {
       allowed: true
     }
   });
+});
+
+// ==================== USER WITHDRAWAL ROUTES ====================
+
+// Create withdrawal request (user endpoint)
+app.post('/api/withdrawals', async (req, res) => {
+  try {
+    if (!checkDatabaseConnection(res)) return;
+    
+    const { userId, userAddress, crypto, cryptoAmount, inrAmount, tokenAddress, type, bankDetails } = req.body;
+    
+    // Validate required fields
+    if (!userId || !crypto || !cryptoAmount || !inrAmount || !tokenAddress || !type) {
+      return res.status(400).json({ 
+        error: 'Missing required fields',
+        required: ['userId', 'crypto', 'cryptoAmount', 'inrAmount', 'tokenAddress', 'type']
+      });
+    }
+    
+    // Create withdrawal request
+    const withdrawalRequest = {
+      userId,
+      userAddress: userAddress || '',
+      crypto,
+      cryptoAmount: parseFloat(cryptoAmount),
+      inrAmount: parseFloat(inrAmount),
+      tokenAddress,
+      status: 'pending_admin_execution',
+      createdAt: new Date(),
+      type,
+      bankDetails: bankDetails || null
+    };
+    
+    const result = await db.collection('pending_withdrawals').insertOne(withdrawalRequest);
+    
+    res.json({
+      success: true,
+      message: 'Withdrawal request created successfully',
+      withdrawalId: result.insertedId,
+      withdrawal: withdrawalRequest
+    });
+    
+  } catch (error) {
+    console.error('Error creating withdrawal request:', error);
+    res.status(500).json({ error: 'Failed to create withdrawal request' });
+  }
+});
+
+// Get user's withdrawal requests
+app.get('/api/users/:userId/withdrawals', async (req, res) => {
+  try {
+    if (!checkDatabaseConnection(res)) return;
+    
+    const { userId } = req.params;
+    const { status, limit = 50 } = req.query;
+    
+    let query = { userId };
+    if (status) {
+      query.status = status;
+    }
+    
+    const withdrawals = await db.collection('pending_withdrawals')
+      .find(query)
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .toArray();
+    
+    res.json({
+      success: true,
+      withdrawals: withdrawals,
+      count: withdrawals.length
+    });
+    
+  } catch (error) {
+    console.error('Error fetching user withdrawals:', error);
+    res.status(500).json({ error: 'Failed to fetch withdrawals' });
+  }
 });
 
 // ==================== ADMIN AUTHENTICATION ROUTES ====================
