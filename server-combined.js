@@ -5,6 +5,13 @@ const { MongoClient, ObjectId } = require('mongodb');
 const axios = require('axios');
 require('dotenv').config();
 
+// Admin credentials
+const ADMIN_CREDENTIALS = {
+  email: "vaibhav.admin@gmail.com",
+  password: "Vaibhav1234",
+  uid: "zgtQXvwBhMbHR4FcdduoNF7sbhl1"
+};
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -27,6 +34,41 @@ function checkDatabaseConnection(res) {
     return false;
   }
   return true;
+}
+
+// Admin authentication middleware
+function authenticateAdmin(req, res, next) {
+  const { email, password } = req.body;
+  
+  if (email === ADMIN_CREDENTIALS.email && password === ADMIN_CREDENTIALS.password) {
+    req.admin = ADMIN_CREDENTIALS;
+    next();
+  } else {
+    res.status(401).json({ 
+      error: 'Invalid admin credentials',
+      message: 'Only authorized administrators can access this endpoint'
+    });
+  }
+}
+
+// Simple admin token verification (for future JWT implementation)
+function verifyAdminToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No admin token provided' });
+  }
+  
+  const token = authHeader.substring(7);
+  
+  // For now, we'll use a simple token check
+  // In production, you should use proper JWT tokens
+  if (token === 'admin-token-' + ADMIN_CREDENTIALS.uid) {
+    req.admin = ADMIN_CREDENTIALS;
+    next();
+  } else {
+    res.status(401).json({ error: 'Invalid admin token' });
+  }
 }
 
 async function connectToDatabase() {
@@ -445,6 +487,212 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// ==================== ADMIN AUTHENTICATION ROUTES ====================
+
+// Admin login endpoint
+app.post('/api/admin/login', authenticateAdmin, (req, res) => {
+  try {
+    const adminToken = 'admin-token-' + ADMIN_CREDENTIALS.uid;
+    
+    res.json({
+      success: true,
+      message: 'Admin login successful',
+      admin: {
+        uid: ADMIN_CREDENTIALS.uid,
+        email: ADMIN_CREDENTIALS.email,
+        token: adminToken
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Admin login error:', error);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// Get all pending withdrawals (admin only)
+app.get('/api/admin/withdrawals', verifyAdminToken, async (req, res) => {
+  try {
+    if (!checkDatabaseConnection(res)) return;
+    
+    const withdrawals = await db.collection('pending_withdrawals')
+      .find({ status: 'pending_admin_execution' })
+      .sort({ createdAt: -1 })
+      .toArray();
+    
+    res.json({
+      success: true,
+      withdrawals: withdrawals,
+      count: withdrawals.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error fetching withdrawals:', error);
+    res.status(500).json({ error: 'Failed to fetch withdrawals' });
+  }
+});
+
+// Execute withdrawal (admin only)
+app.post('/api/admin/withdrawals/:id/execute', verifyAdminToken, async (req, res) => {
+  try {
+    if (!checkDatabaseConnection(res)) return;
+    
+    const { id } = req.params;
+    const { txHash, executedBy } = req.body;
+    
+    const result = await db.collection('pending_withdrawals').updateOne(
+      { _id: new ObjectId(id) },
+      { 
+        $set: { 
+          status: 'executed',
+          executedAt: new Date(),
+          executedBy: executedBy || req.admin.email,
+          txHash: txHash
+        }
+      }
+    );
+    
+    if (result.modifiedCount === 0) {
+      return res.status(404).json({ error: 'Withdrawal not found' });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Withdrawal executed successfully',
+      withdrawalId: id,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error executing withdrawal:', error);
+    res.status(500).json({ error: 'Failed to execute withdrawal' });
+  }
+});
+
+// Reject withdrawal (admin only)
+app.post('/api/admin/withdrawals/:id/reject', verifyAdminToken, async (req, res) => {
+  try {
+    if (!checkDatabaseConnection(res)) return;
+    
+    const { id } = req.params;
+    const { reason } = req.body;
+    
+    const result = await db.collection('pending_withdrawals').updateOne(
+      { _id: new ObjectId(id) },
+      { 
+        $set: { 
+          status: 'rejected',
+          rejectedAt: new Date(),
+          rejectedBy: req.admin.email,
+          rejectionReason: reason || 'No reason provided'
+        }
+      }
+    );
+    
+    if (result.modifiedCount === 0) {
+      return res.status(404).json({ error: 'Withdrawal not found' });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Withdrawal rejected successfully',
+      withdrawalId: id,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error rejecting withdrawal:', error);
+    res.status(500).json({ error: 'Failed to reject withdrawal' });
+  }
+});
+
+// Get all users (admin only)
+app.get('/api/admin/users', verifyAdminToken, async (req, res) => {
+  try {
+    if (!checkDatabaseConnection(res)) return;
+    
+    const { limit = 50, skip = 0 } = req.query;
+    
+    const users = await db.collection('users')
+      .find({})
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .skip(parseInt(skip))
+      .toArray();
+    
+    res.json({
+      success: true,
+      users: users,
+      count: users.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+// Get all transactions (admin only)
+app.get('/api/admin/transactions', verifyAdminToken, async (req, res) => {
+  try {
+    if (!checkDatabaseConnection(res)) return;
+    
+    const { limit = 100, skip = 0, type } = req.query;
+    
+    const query = {};
+    if (type) {
+      query.type = type;
+    }
+    
+    const transactions = await db.collection('transactions')
+      .find(query)
+      .sort({ timestamp: -1 })
+      .limit(parseInt(limit))
+      .skip(parseInt(skip))
+      .toArray();
+    
+    res.json({
+      success: true,
+      transactions: transactions,
+      count: transactions.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error fetching transactions:', error);
+    res.status(500).json({ error: 'Failed to fetch transactions' });
+  }
+});
+
+// Admin dashboard stats
+app.get('/api/admin/stats', verifyAdminToken, async (req, res) => {
+  try {
+    if (!checkDatabaseConnection(res)) return;
+    
+    const totalUsers = await db.collection('users').countDocuments();
+    const totalTransactions = await db.collection('transactions').countDocuments();
+    const pendingWithdrawals = await db.collection('pending_withdrawals').countDocuments({ status: 'pending_admin_execution' });
+    
+    // Get recent activity
+    const recentTransactions = await db.collection('transactions')
+      .find({})
+      .sort({ timestamp: -1 })
+      .limit(10)
+      .toArray();
+    
+    res.json({
+      success: true,
+      stats: {
+        totalUsers,
+        totalTransactions,
+        pendingWithdrawals,
+        recentTransactions
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error fetching admin stats:', error);
+    res.status(500).json({ error: 'Failed to fetch admin stats' });
+  }
+});
+
 // ==================== STATIC FILE SERVING ====================
 
 // Catch all handler: send back React's index.html file for any non-API routes
@@ -465,12 +713,19 @@ app.use((req, res) => {
       message: 'Crypto Pay API Server is running',
       status: 'API Only Mode',
       note: 'Frontend files not found. This server provides API endpoints only.',
-      endpoints: {
-        health: '/api/health',
-        users: '/api/users',
-        transactions: '/api/transactions',
-        cashfree: '/api/create-order'
+    endpoints: {
+      health: '/api/health',
+      users: '/api/users',
+      transactions: '/api/transactions',
+      cashfree: '/api/create-order',
+      admin: {
+        login: '/api/admin/login',
+        withdrawals: '/api/admin/withdrawals',
+        users: '/api/admin/users',
+        transactions: '/api/admin/transactions',
+        stats: '/api/admin/stats'
       }
+    }
     });
   }
 });
