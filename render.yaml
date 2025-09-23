@@ -3,7 +3,7 @@ services:
     name: crypto-pay-api-server
     env: node
     plan: free
-    buildCommand: npm install
+    buildCommand: npm run install
     startCommand: npm start
     envVars:
       - key: NODE_ENV
