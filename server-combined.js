@@ -89,13 +89,6 @@ const allowedOrigins = [
   process.env.CLIENT_ORIGIN || "http://localhost:3000",
   "http://127.0.0.1:3000",
   "http://localhost:3001",
-  "http://127.0.0.1:3001",
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
-  "http://192.168.1.61:3000",
-  "http://192.168.1.61:5173",
-  "https://rainbow-gecko-03f305.netlify.app",
-  "https://rainbow-gecko-03f305.netlify.app/",
   "https://cryptopay2.netlify.app",
   "https://cryptopay2.netlify.app/"
 ];
