@@ -223,16 +223,24 @@ app.get('/api/transactions/:userId', async (req, res) => {
     const { userId } = req.params;
     const { type, limit = 50 } = req.query;
     
+    console.log('🔍 Backend - getUserTransactions called with userId:', userId);
+    console.log('🔍 Backend - Query params:', { type, limit });
+    
     const query = { userId };
     if (type) {
       query.type = type;
     }
+    
+    console.log('🔍 Backend - MongoDB query:', query);
     
     const transactions = await db.collection('transactions')
       .find(query)
       .sort({ timestamp: -1 })
       .limit(parseInt(limit))
       .toArray();
+    
+    console.log('🔍 Backend - Found transactions:', transactions.length);
+    console.log('🔍 Backend - Transaction user IDs:', transactions.map(t => t.userId));
     
     res.json(transactions);
   } catch (error) {
