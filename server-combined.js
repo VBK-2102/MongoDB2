@@ -165,7 +165,10 @@ const allowedOrigins = [
   "http://127.0.0.1:3000",
   "http://localhost:3001",
   "https://cryptopay2.netlify.app",
-  "https://cryptopay2.netlify.app/"
+  "https://cryptopay2.netlify.app/",
+  "https://cryptopay2.netlify.app/dashboard",
+  "https://cryptopay2.netlify.app/admin-deposits",
+  "https://cryptopay2.netlify.app/admin-withdrawals"
 ];
 
 console.log("🌐 CORS Configuration:", {
@@ -174,7 +177,7 @@ console.log("🌐 CORS Configuration:", {
   timestamp: new Date().toISOString()
 });
 
-// Middleware
+// Enhanced CORS middleware
 app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl requests)
@@ -194,9 +197,34 @@ app.use(cors({
     }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-client-id', 'x-client-secret', 'X-Client-Id', 'X-Client-Secret']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'x-client-id', 
+    'x-client-secret', 
+    'X-Client-Id', 
+    'X-Client-Secret',
+    'Accept',
+    'Origin',
+    'X-Requested-With'
+  ],
+  exposedHeaders: ['Content-Length', 'X-Foo', 'X-Bar'],
+  preflightContinue: false,
+  optionsSuccessStatus: 200
 }));
+
+// Additional CORS headers for all responses
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin) || allowedOrigins.includes(origin + '/')) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-client-id, x-client-secret, X-Client-Id, X-Client-Secret, Accept, Origin, X-Requested-With');
+  next();
+});
 
 // CORS middleware handles preflight requests automatically
 
@@ -220,6 +248,10 @@ try {
 // User routes
 app.get('/api/users/:uid', async (req, res) => {
   try {
+    // Set CORS headers
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    
     if (!checkDatabaseConnection(res)) return;
     const { uid } = req.params;
     const user = await db.collection('users').findOne({ uid });
@@ -232,6 +264,10 @@ app.get('/api/users/:uid', async (req, res) => {
 
 app.get('/api/users/email/:email', async (req, res) => {
   try {
+    // Set CORS headers
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    
     const { email } = req.params;
     const user = await db.collection('users').findOne({ email });
     res.json(user);
@@ -408,12 +444,19 @@ app.post("/api/webhook/cashfree", (req, res) => {
 // Test endpoint to check if bank verification service is working
 // Test endpoint for CORS
 app.get("/api/cors-test", (req, res) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
   res.json({
     success: true,
     message: "CORS is working! Server is accessible from frontend.",
     timestamp: new Date().toISOString(),
     origin: req.headers.origin || "No origin header",
-    userAgent: req.headers['user-agent'] || "No user agent"
+    userAgent: req.headers['user-agent'] || "No user agent",
+    cors: {
+      origin: req.headers.origin,
+      allowed: true
+    }
   });
 });
 
@@ -612,6 +655,10 @@ app.post('/api/withdrawals', async (req, res) => {
 // Get user's withdrawal requests
 app.get('/api/users/:userId/withdrawals', async (req, res) => {
   try {
+    // Set CORS headers
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    
     if (!checkDatabaseConnection(res)) return;
     
     const { userId } = req.params;
