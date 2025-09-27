@@ -5,11 +5,50 @@ const { MongoClient, ObjectId } = require('mongodb');
 const axios = require('axios');
 require('dotenv').config();
 
-// Admin credentials - Update UID with actual Firebase UID
+// Multi-Admin Role System
+const ADMIN_ROLES = {
+  SUPER_ADMIN: {
+    email: "super.admin@gmail.com",
+    password: "SuperAdmin1234",
+    uid: "super_admin_uid_001",
+    role: "super_admin",
+    displayName: "Super Admin",
+    permissions: ["all"]
+  },
+  DEPOSIT_ADMIN: {
+    email: "deposit.admin@gmail.com",
+    password: "DepositAdmin1234",
+    uid: "deposit_admin_uid_002",
+    role: "deposit_admin",
+    displayName: "Deposit Admin",
+    permissions: ["deposits", "users", "transactions"]
+  },
+  WITHDRAWAL_ADMIN_1: {
+    email: "withdraw1.admin@gmail.com",
+    password: "Withdraw1Admin1234",
+    uid: "withdraw1_admin_uid_003",
+    role: "withdrawal_admin",
+    displayName: "Withdrawal Admin 1",
+    permissions: ["withdrawals", "users"]
+  },
+  WITHDRAWAL_ADMIN_2: {
+    email: "withdraw2.admin@gmail.com",
+    password: "Withdraw2Admin1234",
+    uid: "withdraw2_admin_uid_004",
+    role: "withdrawal_admin",
+    displayName: "Withdrawal Admin 2",
+    permissions: ["withdrawals", "users"]
+  }
+};
+
+// Legacy admin credentials for backward compatibility
 const ADMIN_CREDENTIALS = {
   email: "vaibhav.admin@gmail.com",
   password: "Vaibhav1234",
-  uid: "83HM4RcwD4Ye08PY13dY484EIxm2" // Replace with actual UID from Firebase Console
+  uid: "83HM4RcwD4Ye08PY13dY484EIxm2",
+  role: "super_admin",
+  displayName: "Vaibhav Admin",
+  permissions: ["all"]
 };
 
 const app = express();
@@ -36,12 +75,20 @@ function checkDatabaseConnection(res) {
   return true;
 }
 
-// Admin authentication middleware
+// Admin authentication middleware - supports multiple roles
 function authenticateAdmin(req, res, next) {
   const { email, password } = req.body;
   
-  if (email === ADMIN_CREDENTIALS.email && password === ADMIN_CREDENTIALS.password) {
-    req.admin = ADMIN_CREDENTIALS;
+  // Check all admin roles
+  const allAdmins = Object.values(ADMIN_ROLES);
+  allAdmins.push(ADMIN_CREDENTIALS); // Include legacy admin
+  
+  const admin = allAdmins.find(admin => 
+    admin.email === email && admin.password === password
+  );
+  
+  if (admin) {
+    req.admin = admin;
     next();
   } else {
     res.status(401).json({ 
@@ -51,7 +98,29 @@ function authenticateAdmin(req, res, next) {
   }
 }
 
-// Simple admin token verification (for future JWT implementation)
+// Role-based permission middleware
+function checkPermission(requiredPermission) {
+  return (req, res, next) => {
+    if (!req.admin) {
+      return res.status(401).json({ error: 'Admin authentication required' });
+    }
+    
+    const hasPermission = req.admin.permissions.includes('all') || 
+                         req.admin.permissions.includes(requiredPermission);
+    
+    if (hasPermission) {
+      next();
+    } else {
+      res.status(403).json({ 
+        error: 'Insufficient permissions',
+        message: `This action requires '${requiredPermission}' permission`,
+        adminRole: req.admin.role
+      });
+    }
+  };
+}
+
+// Enhanced admin token verification with role support
 function verifyAdminToken(req, res, next) {
   const authHeader = req.headers.authorization;
   
@@ -61,10 +130,16 @@ function verifyAdminToken(req, res, next) {
   
   const token = authHeader.substring(7);
   
-  // For now, we'll use a simple token check
-  // In production, you should use proper JWT tokens
-  if (token === 'admin-token-' + ADMIN_CREDENTIALS.uid) {
-    req.admin = ADMIN_CREDENTIALS;
+  // Check all admin roles for token match
+  const allAdmins = Object.values(ADMIN_ROLES);
+  allAdmins.push(ADMIN_CREDENTIALS); // Include legacy admin
+  
+  const admin = allAdmins.find(admin => 
+    token === 'admin-token-' + admin.uid
+  );
+  
+  if (admin) {
+    req.admin = admin;
     next();
   } else {
     res.status(401).json({ error: 'Invalid admin token' });
@@ -565,19 +640,176 @@ app.get('/api/users/:userId/withdrawals', async (req, res) => {
   }
 });
 
-// ==================== ADMIN AUTHENTICATION ROUTES ====================
+// ==================== DEPOSIT ADMIN ENDPOINTS ====================
 
-// Admin login endpoint
+// Get all deposits (deposit admins only)
+app.get('/api/admin/deposits', verifyAdminToken, checkPermission('deposits'), async (req, res) => {
+  try {
+    if (!checkDatabaseConnection(res)) return;
+    
+    const { limit = 100, skip = 0, status, type } = req.query;
+    
+    let query = {};
+    if (status) query.status = status;
+    if (type) query.type = type;
+    
+    const deposits = await db.collection('transactions')
+      .find({ ...query, type: { $in: ['deposit', 'inr_deposit'] } })
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .skip(parseInt(skip))
+      .toArray();
+    
+    const totalDeposits = await db.collection('transactions')
+      .countDocuments({ ...query, type: { $in: ['deposit', 'inr_deposit'] } });
+    
+    res.json({
+      success: true,
+      deposits,
+      totalDeposits,
+      pagination: {
+        limit: parseInt(limit),
+        skip: parseInt(skip),
+        hasMore: totalDeposits > parseInt(skip) + parseInt(limit)
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error fetching deposits:', error);
+    res.status(500).json({ error: 'Failed to fetch deposits' });
+  }
+});
+
+// Get deposit statistics (deposit admins only)
+app.get('/api/admin/deposit-stats', verifyAdminToken, checkPermission('deposits'), async (req, res) => {
+  try {
+    if (!checkDatabaseConnection(res)) return;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const totalDeposits = await db.collection('transactions')
+      .countDocuments({ type: { $in: ['deposit', 'inr_deposit'] } });
+    
+    const todayDeposits = await db.collection('transactions')
+      .countDocuments({ 
+        type: { $in: ['deposit', 'inr_deposit'] },
+        createdAt: { $gte: today }
+      });
+    
+    const totalDepositAmount = await db.collection('transactions')
+      .aggregate([
+        { $match: { type: { $in: ['deposit', 'inr_deposit'] } } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]).toArray();
+    
+    const todayDepositAmount = await db.collection('transactions')
+      .aggregate([
+        { 
+          $match: { 
+            type: { $in: ['deposit', 'inr_deposit'] },
+            createdAt: { $gte: today }
+          } 
+        },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]).toArray();
+    
+    res.json({
+      success: true,
+      stats: {
+        totalDeposits,
+        todayDeposits,
+        totalDepositAmount: totalDepositAmount[0]?.total || 0,
+        todayDepositAmount: todayDepositAmount[0]?.total || 0
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error fetching deposit stats:', error);
+    res.status(500).json({ error: 'Failed to fetch deposit stats' });
+  }
+});
+
+// Verify deposit (deposit admins only)
+app.post('/api/admin/deposits/:id/verify', verifyAdminToken, checkPermission('deposits'), async (req, res) => {
+  try {
+    if (!checkDatabaseConnection(res)) return;
+    
+    const { id } = req.params;
+    const { verifiedBy, notes } = req.body;
+    
+    const result = await db.collection('transactions').updateOne(
+      { _id: new ObjectId(id) },
+      { 
+        $set: { 
+          status: 'verified',
+          verifiedBy: verifiedBy || req.admin.email,
+          verifiedAt: new Date(),
+          adminNotes: notes || ''
+        } 
+      }
+    );
+    
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: 'Deposit not found' });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Deposit verified successfully',
+      depositId: id
+    });
+    
+  } catch (error) {
+    console.error('Error verifying deposit:', error);
+    res.status(500).json({ error: 'Failed to verify deposit' });
+  }
+});
+
+// ==================== SUPER ADMIN ENDPOINTS ====================
+
+// Get all admin roles (super admins only)
+app.get('/api/admin/roles', verifyAdminToken, checkPermission('all'), async (req, res) => {
+  try {
+    const allAdmins = Object.values(ADMIN_ROLES);
+    allAdmins.push(ADMIN_CREDENTIALS); // Include legacy admin
+    
+    const adminList = allAdmins.map(admin => ({
+      uid: admin.uid,
+      email: admin.email,
+      role: admin.role,
+      displayName: admin.displayName,
+      permissions: admin.permissions
+    }));
+    
+    res.json({
+      success: true,
+      admins: adminList,
+      totalAdmins: adminList.length
+    });
+    
+  } catch (error) {
+    console.error('Error fetching admin roles:', error);
+    res.status(500).json({ error: 'Failed to fetch admin roles' });
+  }
+});
+
+// ==================== EXISTING ADMIN ENDPOINTS (UPDATED) ====================
+
+// Admin login endpoint - supports multiple roles
 app.post('/api/admin/login', authenticateAdmin, (req, res) => {
   try {
-    const adminToken = 'admin-token-' + ADMIN_CREDENTIALS.uid;
+    const adminToken = 'admin-token-' + req.admin.uid;
     
     res.json({
       success: true,
       message: 'Admin login successful',
       admin: {
-        uid: ADMIN_CREDENTIALS.uid,
-        email: ADMIN_CREDENTIALS.email,
+        uid: req.admin.uid,
+        email: req.admin.email,
+        role: req.admin.role,
+        displayName: req.admin.displayName,
+        permissions: req.admin.permissions,
         token: adminToken
       },
       timestamp: new Date().toISOString()
@@ -588,8 +820,8 @@ app.post('/api/admin/login', authenticateAdmin, (req, res) => {
   }
 });
 
-// Get all pending withdrawals (admin only)
-app.get('/api/admin/withdrawals', verifyAdminToken, async (req, res) => {
+// Get all pending withdrawals (withdrawal admins only)
+app.get('/api/admin/withdrawals', verifyAdminToken, checkPermission('withdrawals'), async (req, res) => {
   try {
     if (!checkDatabaseConnection(res)) return;
     
@@ -610,8 +842,8 @@ app.get('/api/admin/withdrawals', verifyAdminToken, async (req, res) => {
   }
 });
 
-// Execute withdrawal (admin only)
-app.post('/api/admin/withdrawals/:id/execute', verifyAdminToken, async (req, res) => {
+// Execute withdrawal (withdrawal admins only)
+app.post('/api/admin/withdrawals/:id/execute', verifyAdminToken, checkPermission('withdrawals'), async (req, res) => {
   try {
     if (!checkDatabaseConnection(res)) return;
     
@@ -646,8 +878,8 @@ app.post('/api/admin/withdrawals/:id/execute', verifyAdminToken, async (req, res
   }
 });
 
-// Reject withdrawal (admin only)
-app.post('/api/admin/withdrawals/:id/reject', verifyAdminToken, async (req, res) => {
+// Reject withdrawal (withdrawal admins only)
+app.post('/api/admin/withdrawals/:id/reject', verifyAdminToken, checkPermission('withdrawals'), async (req, res) => {
   try {
     if (!checkDatabaseConnection(res)) return;
     
@@ -682,8 +914,8 @@ app.post('/api/admin/withdrawals/:id/reject', verifyAdminToken, async (req, res)
   }
 });
 
-// Get all users (admin only)
-app.get('/api/admin/users', verifyAdminToken, async (req, res) => {
+// Get all users (all admins can view users)
+app.get('/api/admin/users', verifyAdminToken, checkPermission('users'), async (req, res) => {
   try {
     if (!checkDatabaseConnection(res)) return;
     
@@ -708,8 +940,8 @@ app.get('/api/admin/users', verifyAdminToken, async (req, res) => {
   }
 });
 
-// Get all transactions (admin only)
-app.get('/api/admin/transactions', verifyAdminToken, async (req, res) => {
+// Get all transactions (deposit admins and super admins)
+app.get('/api/admin/transactions', verifyAdminToken, checkPermission('transactions'), async (req, res) => {
   try {
     if (!checkDatabaseConnection(res)) return;
     
@@ -739,8 +971,8 @@ app.get('/api/admin/transactions', verifyAdminToken, async (req, res) => {
   }
 });
 
-// Admin dashboard stats
-app.get('/api/admin/stats', verifyAdminToken, async (req, res) => {
+// Admin dashboard stats (super admins only)
+app.get('/api/admin/stats', verifyAdminToken, checkPermission('all'), async (req, res) => {
   try {
     if (!checkDatabaseConnection(res)) return;
     
@@ -823,3 +1055,4 @@ async function startServer() {
 }
 
 startServer().catch(console.error);
+ 
