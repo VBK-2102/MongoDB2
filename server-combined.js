@@ -34,7 +34,7 @@ const ADMIN_ROLES = {
   WITHDRAWAL_ADMIN_2: {
     email: "withdraw2.admin@gmail.com",
     password: "Withdraw2Admin1234",
-    uid: "withdraw2_admin_uid_004", // Placeholder - needs real Firebase UID
+    uid: "83HM4RcwD4Ye08PY13dY484EIxm2", // Your actual Firebase UID for now
     role: "withdrawal_admin",
     displayName: "Withdrawal Admin 2",
     permissions: ["withdrawals", "users"]
