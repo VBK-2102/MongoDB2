@@ -10,7 +10,7 @@ const ADMIN_ROLES = {
   SUPER_ADMIN: {
     email: "super.admin@gmail.com",
     password: "SuperAdmin1234",
-    uid: "super_admin_uid_001",
+    uid: "83HM4RcwD4Ye08PY13dY484EIxm2", // Your actual Firebase UID
     role: "super_admin",
     displayName: "Super Admin",
     permissions: ["all"]
@@ -18,7 +18,7 @@ const ADMIN_ROLES = {
   DEPOSIT_ADMIN: {
     email: "deposit.admin@gmail.com",
     password: "DepositAdmin1234",
-    uid: "deposit_admin_uid_002",
+    uid: "83HM4RcwD4Ye08PY13dY484EIxm2", // Your actual Firebase UID for now
     role: "deposit_admin",
     displayName: "Deposit Admin",
     permissions: ["deposits", "users", "transactions"]
@@ -26,7 +26,7 @@ const ADMIN_ROLES = {
   WITHDRAWAL_ADMIN_1: {
     email: "withdraw1.admin@gmail.com",
     password: "Withdraw1Admin1234",
-    uid: "withdraw1_admin_uid_003",
+    uid: "83HM4RcwD4Ye08PY13dY484EIxm2", // Your actual Firebase UID for now
     role: "withdrawal_admin",
     displayName: "Withdrawal Admin 1",
     permissions: ["withdrawals", "users"]
@@ -34,7 +34,7 @@ const ADMIN_ROLES = {
   WITHDRAWAL_ADMIN_2: {
     email: "withdraw2.admin@gmail.com",
     password: "Withdraw2Admin1234",
-    uid: "withdraw2_admin_uid_004",
+    uid: "withdraw2_admin_uid_004", // Placeholder - needs real Firebase UID
     role: "withdrawal_admin",
     displayName: "Withdrawal Admin 2",
     permissions: ["withdrawals", "users"]
